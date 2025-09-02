@@ -1,0 +1,9 @@
+*.img
+*.bin
+*.ini
+
+build
+src/.cache
+tests/*.out
+
+*.vim
