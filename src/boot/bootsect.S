@@ -1,5 +1,11 @@
-/*
- * 导入 C 头文件应使用 #include，并使用 `cpp` 或 `gcc -E` 进行预处理。
+/* 构建启动镜像时，bootsect.S 会被写入到 bootimage 的第一个扇区，也就是 MBR。
+ * 加电自检后 BIOS 会加载 MBR 也就是 bootsect.S 到内存 0x7c00。
+ *
+ * bootsect.S 的功能是将自己拷贝到内存 0x90000 处，并从软盘加载 setup.S 到内存
+ * 0x902000（紧随 bootsect.S 之后），加载 system 模块（内核）到内存 0x10000。
+ */
+
+/* 导入 C 头文件应使用 #include，并使用 `cpp` 或 `gcc -E` 进行预处理。
  * 而 .include 只能导入汇编代码。
  **/
 #include "linux/config.h"
@@ -10,11 +16,9 @@
 .equ SETUPSEG, DEF_SETUPSEG # 加载 setup.S 到该内存地址
 .equ SYSSEG, DEF_SYSSEG # 加载 system 模块到该内存地址
 .equ SYSSIZE, DEF_SYSSIZE # system 模块的大小
-.equ ENDSEG, SYSSEG + SYSSIZE
+.equ ENDSEG, SYSSEG + SYSSIZE # system 模块结束地址
 
 # ROOT_DEV 和 SWAP_DEV 由 build.c 确定
-# ROOT_DEV = 0
-# SWAP_DEV = 0
 .equ ROOT_DEV, 0
 .equ SWAP_DEV, 0
 
@@ -45,7 +49,7 @@ go:
     movw %ax, %ss               # 将 ss 设为 0x9000
 
     /* 栈顶指针默认向低地址增长，且不能覆盖程序代码。在 0x90000～0x92000 已经
-     * 存放了 bootsect.S，而随后还要存放 boot.S（0x200 * 4），因此栈顶指针应该
+     * 存放了 bootsect.S，而随后还要存放 setup.S（0x200 * 4），因此栈顶指针应该
      * 远大于 0x90000 + 0x200 + 0x200 * 4。Linux 0.12 中这个值是 0x9ff00。
      *
      * 接下来要在栈中存放一个软盘参数表（12 B），因此要留出这一部分的内存。
@@ -56,6 +60,7 @@ go:
     xchgw %bx, %bx
     /* 一些 BIOS 读多扇区时不能超过默认最大扇区数（通常是 7 扇区），为此需要修改
      * 默认最大扇区数。这个数据可以通过 BIOS 中断向量表找到。
+     *
      * BIOS 中断向量表是一组函数指针，每一项占 4 字节，共 256 项。其中第 0x1e 项
      * 是一个指向 DPT（Diskette Parameter Table），软盘参数表的指针。
      */
@@ -87,6 +92,7 @@ go:
 load_setup:
     /* 使用 BIOS 第 0x13 号中断从软盘第 2 个扇区读取 setup.S 到内存 0x90200，
      * 共 4 个扇区。若出现错误则显示软盘出错扇区位置并复位驱动器重试。
+     *
      * int 0x13 参数如下所示：
      * ah=2 读扇区服务，al 读取的扇区数，
      * ch 磁道号低 8 位，cl 扇区号（0～5）和磁道号高 2 位（6～7）
@@ -116,8 +122,9 @@ load_setup:
     jmp load_setup
 
 ok_load_setup:
-    /* 使用 BIOS 第 0x13 号中断获取软盘驱动参数，实际是获取每磁道扇区数，并保存
-     * 在 sectors 处。
+    /* 使用 BIOS 第 0x13 号中断获取软盘驱动参数，以获取每磁道扇区数，
+     * 并保存在 sectors 处。
+     *
      * int 0x13 参数如下所示：
      * ah=8 读驱动参数，dl 驱动器号
      * 返回信息：
@@ -177,25 +184,36 @@ ok_load_setup:
     or %ax, %ax
     jne root_defined
 
-    # root_dev 未定义，通过判断最大扇区数确定软盘类型
+    /* root_dev 未定义，通过判断最大扇区数确定软盘类型
+     *
+     * linux 0.12 的设备号命名方式如下：
+     * 设备号 = 主设备号 * 256 + 次设备号
+     * 软盘的主设备号为 2，次设备号 = type * 4 + nr
+     * 其中 type 是软驱类型，1.2MB 软驱为 2，1.44 MB 软驱为 7
+     * nr 为 0～3 对应软驱 A、B、C、D
+     */
     movw $sectors, %bx
-    movw $0x0208, %ax
-    cmp $15, %bx
+    movw $0x0208, %ax    # 1.2MB A 驱动器设备号
+    cmp $15, %bx         # 1.2MB 软盘最大扇区数为 15
     je root_defined
-    movw $0x021c, %ax
-    cmp $18, %bx
+    movw $0x021c, %ax    # 1.44MB A 驱动器设备号
+    cmp $18, %bx         # 1.44MB 软盘最大扇区数为 18
     je root_defined
 
 undef_root:
     jmp undef_root
 
 root_defined:
+    /* 保存根文件系统设备号到 ax 以作为参数传递给 setup.S */
     movw $root_dev, %ax
 
     ljmp $0, $SETUPSEG
 
-/*当前磁道已读取扇区数。1 + SETUPLEN 表示已读取引导扇区和 setup.S 的 4 个扇区。
- * head 为当前磁头号，track 为当前扇区号。
+/* read_it 是读取 system 模块的主要函数。在 bootimage 中，system 模块紧随 
+ * setup.S，并且长度不确定。因此在读取时需要考虑磁道变换和段溢出的情况。
+ *
+ * sread 为当前磁道已读取扇区数。1 + SETUPLEN 表示已读取引导扇区和 setup.S 的 
+ * 4 个扇区。head 为当前磁头号，track 为当前磁道号。
  **/
 sread: .word 1 + SETUPLEN
 head: .word 0
@@ -207,15 +225,15 @@ read_it:
     test $0xfff, %ax
 die:
     jne die             # 死循环
-    xor %bx, %bx        # 用 bx 记录当前段内偏移
 
+    xor %bx, %bx        # bx 记录当前段内偏移，通过段内偏移判断是否段溢出
 rp_read:
     movw %es, %ax
-    cmp $ENDSEG, %ax    # 检查是否已加载全部数据
+    cmp $ENDSEG, %ax    # 检查是否已加载全部数据（这里假设系统大小一定大于一个段）
     jb ok1_read         # 未加载完则跳转 ok1_read
     ret                 # 已加载完则结束
 ok1_read:
-    /* 计算本次读取扇区数 */
+    /* 计算本次读取扇区数。每次读取都尽量读取一个段或一个磁道。 */
     movw $sectors, %ax
     subw $sread, %ax    # 计算当前磁道剩余扇区数
     movw %ax, %cx
@@ -229,24 +247,25 @@ ok1_read:
     sub %bx, %ax        # 0 - 当前段内偏移 = 可用段内偏移
     shrw $9, %ax        # 可用偏移除以 512 得到最大可读取扇区
 ok2_read:
+    /* 读取扇区，并更新已读取扇区数，若已读完则更换磁头或磁道，未读完则继续读取 */
     call read_track
     movw %ax, %cx       # 保存本次操作已读取扇区数到 cx
     addw $sread, %ax    # 保存当前磁道已读取扇区数
     cmp $sectors, %ax   # 还有未读完扇区，跳转 ok3_read
     jne ok3_read
 
-    /* 当前磁道当前磁头面已读取（软盘只有一个盘片，一个盘片有两面），则读取下一
-     * 磁头面，若已读取，则读下一磁道。
+    /* 当前磁道当前磁头已读取（软盘只有一个盘片，一个盘片有两面），则读取下一磁
+     * 头，若已读取，则读下一磁道。
      **/
     movw $1, %ax
-    subw $head, %ax    # 判断是否是磁道的第二磁头面
-    jne ok4_read
-    incw track         # 两个磁头面都已读完，读下一磁道
+    subw $head, %ax    # 判断是否是磁道的第二磁头
+    jne ok4_read       # 是第一个磁头，继续读第二磁头
+    incw track         # 两个磁头都已读完，读下一磁道
 ok4_read:
     movw %ax, head    # 保存当前磁头号
     xorw %ax, %ax
 ok3_read:
-    movw $sread, %ax   # 保存当前磁道已读扇区数
+    movw %ax, sread   # 保存当前磁道已读扇区数
     shlw $9, %cx
     addw %cx, %bx      # 计算当前段内偏移
     jnc rp_read        # 未超过 64 KB，继续读
@@ -255,12 +274,13 @@ ok3_read:
     movw %es, %ax
     addb $0x10, %ah
     movw %ax, %es
-    xorw %bx, %bx
+    xorw %bx, %bx      # 清空段内偏移
     jmp rp_read
 read_track:
     pusha               # 入栈所有寄存器
+    /* 打印「.」*/
     pusha               # 为 0x10 中断入栈所有寄存器
-    movw $0xe2e, %ax    # 打印 '.'
+    movw $0xe2e, %ax    # 服务号和 '.'
     movw $7, %bx
     int $0x10
     popa                # 恢复寄存器
@@ -305,25 +325,33 @@ bad_rt:
     popa
     jmp read_track       # 重试
 
+/* 打印栈内 ax，bx，cx，dx 寄存器值及错误码，此时的栈如下所示：
+ * ret <- sp
+ * error
+ * ax
+ * bx
+ * cx
+ * dx
+ **/
 print_all:
     movw $5, %cx
-    movw %sp, %bp
+    movw %sp, %bp    # 保存栈顶指针
 print_loop:
     pushw %cx
     call print_nl
-    jae no_reg
+    jae no_reg         # CF 为 0 则不显示寄存器名
 
     movw $0xe05 + 0x41 - 1, %ax
-    subb %cl, %al
+    subb %cl, %al      # 0x45 - cl，打印「@/A/B/C/D」
     int $0x10
 
-    movb $0x58, %al
+    movb $0x58, %al    # 打印「X」
     int $0x10
 
-    movb $0x3a, %al
+    movb $0x3a, %al    # 打印「:」
     int $0x10
 no_reg:
-    addw $2, %bp
+    addw $2, %bp       # 下一个寄存器值
     call print_hex
     popw %cx
     loop print_loop
