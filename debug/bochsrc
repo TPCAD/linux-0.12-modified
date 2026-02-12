@@ -5,13 +5,13 @@ display_library: x, options="gui_debug"
 memory: guest=32, host=32, block_size=128
 romimage: file="/usr/share/bochs/BIOS-bochs-latest", address=0x00000000, options=none, flash_data=none
 vgaromimage: file="/usr/share/bochs/VGABIOS-lgpl-latest"
-boot: floppy
+boot: disk
 floppy_bootsig_check: disabled=0
 floppya: type=1_44
-floppya: 1_44="../build/image", status=inserted
+# floppya: 1_44="./build/image", status=inserted
 # no floppyb
 ata0: enabled=true, ioaddr1=0x1f0, ioaddr2=0x3f0, irq=14
-# ata0-master: type=disk, path="./boot.img", mode=flat
+ata0-master: type=disk, path="../src/image", mode=flat
 # ata0-slave: type=disk, path="../build/slave.img", mode=flat
 ata1: enabled=true, ioaddr1=0x170, ioaddr2=0x370, irq=15
 ata1-master: type=none

@@ -1,0 +1,98 @@
+[
+  {
+    "file": "main.c",
+    "arguments": [
+      "gcc",
+      "-m32",
+      "-fno-builtin",
+      "-nostdinc",
+      "-fno-pic",
+      "-fno-pie",
+      "-fno-stack-protector",
+      "-Iinclude",
+      "-O0",
+      "-mno-sse",
+      "-mno-mmx",
+      "-mno-sse2",
+      "-g",
+      "-c",
+      "-o",
+      "main.o",
+      "main.c"
+    ],
+    "directory": "/home/tpcad/Projects/linux-0.12-modified/src",
+    "output": "main.o"
+  },
+  {
+    "file": "sched.c",
+    "arguments": [
+      "gcc",
+      "-m32",
+      "-fno-builtin",
+      "-nostdinc",
+      "-fno-pic",
+      "-fno-pie",
+      "-fno-stack-protector",
+      "-I../include",
+      "-O0",
+      "-mno-sse",
+      "-mno-mmx",
+      "-mno-sse2",
+      "-g",
+      "-c",
+      "-o",
+      "sched.o",
+      "sched.c"
+    ],
+    "directory": "/home/tpcad/Projects/linux-0.12-modified/src/kernel",
+    "output": "sched.o"
+  },
+  {
+    "file": "tty_io.c",
+    "arguments": [
+      "gcc",
+      "-m32",
+      "-fno-builtin",
+      "-nostdinc",
+      "-fno-pic",
+      "-fno-pie",
+      "-fno-stack-protector",
+      "-I../../include",
+      "-O0",
+      "-mno-sse",
+      "-mno-mmx",
+      "-mno-sse2",
+      "-g",
+      "-c",
+      "-o",
+      "tty_io.o",
+      "tty_io.c"
+    ],
+    "directory": "/home/tpcad/Projects/linux-0.12-modified/src/kernel/chr_drv",
+    "output": "tty_io.o"
+  },
+  {
+    "file": "console.c",
+    "arguments": [
+      "gcc",
+      "-m32",
+      "-fno-builtin",
+      "-nostdinc",
+      "-fno-pic",
+      "-fno-pie",
+      "-fno-stack-protector",
+      "-I../../include",
+      "-O0",
+      "-mno-sse",
+      "-mno-mmx",
+      "-mno-sse2",
+      "-g",
+      "-c",
+      "-o",
+      "console.o",
+      "console.c"
+    ],
+    "directory": "/home/tpcad/Projects/linux-0.12-modified/src/kernel/chr_drv",
+    "output": "console.o"
+  }
+]

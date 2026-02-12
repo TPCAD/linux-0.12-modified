@@ -5,5 +5,9 @@
 build
 src/.cache
 tests/*.out
+*a.out
+*.o
+*.a
+tmp_make
 
 *.vim
