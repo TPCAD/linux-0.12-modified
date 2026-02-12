@@ -1,5 +1,8 @@
 [book]
+title = "Oak Documents"
 authors = ["TPCAD"]
-language = "en"
-src = "src"
-title = "Linux 0.12 Modified Documentations"
+language = "zh-CN"
+
+[output.html]
+# additional-js = ["js/highlightjs-line-numbers.min.js"]
+mathjax-support = true
